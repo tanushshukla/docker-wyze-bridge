@@ -107,6 +107,7 @@ This repository is compatible with the Home Assistant Add-on Store.
 | `SNAPSHOT` | `Disable` | Interval in seconds to take snapshots (e.g., `180`). |
 | `SNAPSHOT_RETENTION` | `7d` | How long to keep snapshots (e.g., `7d`, `24h`). |
 | `FILTER_NAMES` | *None* | Comma-separated list of camera nicknames to include. |
+| `LOG_V4_VALIDATION` | `False` | Log `v2` vs `v4` camera discovery differences to validate parity before any API migration. |
 
 ---
 

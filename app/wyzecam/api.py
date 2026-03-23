@@ -12,10 +12,23 @@ from typing import Any, Optional
 from requests import PreparedRequest, Response, get, post
 
 from wyzebridge.build_config import APP_VERSION, IOS_VERSION, VERSION
+from wyzebridge.bridge_utils import env_bool
 from wyzecam.api_models import WyzeAccount, WyzeCamera, WyzeCredential
 
 SCALE_USER_AGENT = f"Wyze/{APP_VERSION} (iPhone; iOS {IOS_VERSION}; Scale/3.00)"
 logger = logging.getLogger("WyzeBridge")
+VALIDATION_FIELDS = (
+    "product_model",
+    "nickname",
+    "firmware_ver",
+    "timezone_name",
+    "mac",
+    "enr",
+    "ip",
+    "p2p_type",
+    "thumbnail",
+)
+CRITICAL_V4_FIELDS = ("mac", "product_model", "firmware_ver", "thumbnail", "enr", "ip", "p2p_type")
 AUTH_API = "https://auth-prod.api.wyze.com"
 WYZE_API = "https://api.wyzecam.com/app"
 CLOUD_API = "https://app-core.cloud.wyze.com/app"
@@ -372,6 +385,66 @@ def _merge_camera_lists(*camera_lists: list[WyzeCamera]) -> list[WyzeCamera]:
             cameras_by_id[camera.mac] = _merge_camera(existing, camera) if existing else camera
     return list(cameras_by_id.values())
 
+def _is_missing(value: Any) -> bool:
+    return value in (None, "", [], {})
+
+def _log_v4_validation(legacy_cameras: list[WyzeCamera], cloud_cameras: list[WyzeCamera]) -> None:
+    if not env_bool("LOG_V4_VALIDATION", style="bool"):
+        return
+
+    legacy_by_id = {cam.mac: cam for cam in legacy_cameras}
+    cloud_by_id = {cam.mac: cam for cam in cloud_cameras}
+    only_legacy = sorted(set(legacy_by_id) - set(cloud_by_id))
+    only_cloud = sorted(set(cloud_by_id) - set(legacy_by_id))
+    shared = sorted(set(legacy_by_id) & set(cloud_by_id))
+
+    logger.info(
+        f"[API] V4 validation summary: legacy={len(legacy_cameras)} "
+        f"cloud={len(cloud_cameras)} shared={len(shared)} "
+        f"legacy_only={len(only_legacy)} cloud_only={len(only_cloud)}"
+    )
+
+    for cam_id in only_legacy:
+        cam = legacy_by_id[cam_id]
+        logger.warning(
+            f"[API] V4 validation: legacy-only camera {cam.nickname or cam.name_uri} [{cam.product_model}]"
+        )
+
+    for cam_id in only_cloud:
+        cam = cloud_by_id[cam_id]
+        logger.info(
+            f"[API] V4 validation: cloud-only camera {cam.nickname or cam.name_uri} [{cam.product_model}]"
+        )
+
+    for cam_id in shared:
+        legacy = legacy_by_id[cam_id]
+        cloud = cloud_by_id[cam_id]
+        diffs = []
+        for field_name in VALIDATION_FIELDS:
+            legacy_value = getattr(legacy, field_name)
+            cloud_value = getattr(cloud, field_name)
+            if legacy_value != cloud_value:
+                diffs.append(f"{field_name}={legacy_value!r}->{cloud_value!r}")
+
+        if diffs:
+            logger.info(
+                f"[API] V4 validation: field differences for {legacy.nickname or legacy.name_uri} "
+                f"[{legacy.product_model}] {', '.join(diffs)}"
+            )
+
+        missing_critical = [
+            field_name
+            for field_name in CRITICAL_V4_FIELDS
+            if not _is_missing(getattr(legacy, field_name))
+            and _is_missing(getattr(cloud, field_name))
+        ]
+        if missing_critical:
+            logger.warning(
+                f"[API] V4 validation: missing critical fields for "
+                f"{legacy.nickname or legacy.name_uri} [{legacy.product_model}] "
+                f"in cloud data: {', '.join(missing_critical)}"
+            )
+
 def get_camera_list(auth_info: WyzeCredential) -> list[WyzeCamera]:
     """Return a list of all cameras on the account."""
     data = get_homepage_object_list(auth_info)
@@ -383,6 +456,7 @@ def get_camera_list(auth_info: WyzeCredential) -> list[WyzeCamera]:
             cloud_cameras = _build_camera_list(
                 home_data.get("device_list", []), "cloud v4/home/get-home-devices"
             )
+            _log_v4_validation(cameras, cloud_cameras)
             cameras = _merge_camera_lists(cameras, cloud_cameras)
         except Exception as ex:
             logger.debug(f"[API] Could not refresh camera list from v4 home devices: [{type(ex).__name__}] {ex}")
