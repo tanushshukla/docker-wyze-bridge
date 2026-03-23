@@ -306,6 +306,9 @@ class WyzeApi:
         if not self.auth:
             logger.error("[API] User not authorized in get_kvs_signal()")
             return  {"result": "User not authorized"}
+        if not cam.mac:
+            logger.warning(f"[API] {cam_name} is missing a device identifier required for WebRTC signaling")
+            return {"result": "Camera is missing a device identifier required for WebRTC signaling", "cam": cam_name}
 
         try:
             logger.info("☁️ Fetching signaling data from the Wyze API...")
