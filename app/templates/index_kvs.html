@@ -86,6 +86,16 @@
                                 type="text" value="{{ camera.preview_url }}" readonly onclick="this.select();">
                         </div>
                     </div>
+                    <div class="field has-addons mb-1">
+                        <div class="control">
+                            <a href="{{ camera.snapshot_url }}" class="button is-small is-warning is-outlined"
+                                target="_blank">Snapshot</a>
+                        </div>
+                        <div class="control is-expanded">
+                            <input class="input is-small is-borderless has-background-black-ter has-text-grey-light"
+                                type="text" value="{{ camera.snapshot_url }}" readonly onclick="this.select();">
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -121,7 +131,7 @@
     .preview-launch {
         position: absolute;
         right: 0.75rem;
-        bottom: 0.75rem;
+        top: 0.75rem;
         z-index: 1;
     }
 

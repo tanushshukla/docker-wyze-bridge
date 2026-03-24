@@ -103,6 +103,7 @@ def create_app():
                 "connected": True,  # go2rtc handles connections
                 "enabled": uri not in wb.disabled_cams,
                 "img_url": f"/snapshot/{uri}.jpg",
+                "snapshot_url": f"{request.host_url.rstrip('/')}/snapshot/{uri}.jpg",
                 "webrtc_url": f"/webrtc/{uri}",
                 "preview_url": f"{request.host_url.rstrip('/')}/webrtc/{uri}",
                 "rtsp_url": f"rtsp://{request.host.split(':')[0]}:8554/{uri}",
@@ -184,6 +185,7 @@ def create_app():
                 "webrtc_url": f"/webrtc/{cam_name}",
                 "rtsp_url": f"rtsp://{request.host.split(':')[0]}:8554/{cam_name}",
                 "img_url": f"/snapshot/{cam_name}.jpg",
+                "snapshot_url": f"{request.host_url.rstrip('/')}/snapshot/{cam_name}.jpg",
                 "mac": cam.mac,
                 "online": cam.ip is not None,
             }
