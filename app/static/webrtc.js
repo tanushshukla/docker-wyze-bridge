@@ -1,4 +1,5 @@
 const restartPause = 2000;
+const marsPingInterval = 20000;
 
 const parseOffer = (offer) => {
     const ret = {
@@ -51,21 +52,30 @@ class Receiver {
         if (signalJson.result !== "ok") { return console.error("signaling json not ok"); }
         this.signalJson = signalJson;
         this.whep = !!("whep" in this.signalJson);
+        this.isMars = this.signalJson.provider === "mars";
         this.restartTimeout = null;
         this.queuedCandidates = [];
         this.ws = null;
         this.pc = null;
         this.sessionUrl = '';
         this.iceConnectionTimer;
+        this.keepaliveTimer = null;
         this.start();
     }
     start() {
         if (this.whep) { return this.onOpen(); }
         this.ws = new WebSocket(this.signalJson.signalingUrl);
-        this.ws.onopen = () => this.onOpen();
+        this.ws.onopen = () => this.onWsOpen();
         this.ws.onmessage = (msg) => this.onWsMessage(msg);
-        this.ws.onerror = (err) => this.onError(err);
-        this.ws.onclose = () => this.onError();
+        this.ws.onerror = (err) => this.onWsError(err);
+        this.ws.onclose = (evt) => this.onWsClose(evt);
+    }
+
+    onWsOpen() {
+        if (this.isMars) {
+            this.startKeepalive();
+        }
+        this.onOpen();
     }
 
     onOpen() {
@@ -104,6 +114,28 @@ class Receiver {
             return { 'Authorization': 'Basic ' + btoa(server.username + ':' + server.credential) };
         }
         return {}
+    }
+
+    startKeepalive() {
+        this.stopKeepalive();
+        this.keepaliveTimer = window.setInterval(() => {
+            if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+                return;
+            }
+            try {
+                this.ws.send(JSON.stringify({ type: 'ping' }));
+            } catch (err) {
+                console.warn(`[${this.signalJson.cam}] Mars ping failed:`, err);
+            }
+        }, marsPingInterval);
+        console.log(`[${this.signalJson.cam}] Started Mars keepalive`);
+    }
+
+    stopKeepalive() {
+        if (this.keepaliveTimer !== null) {
+            window.clearInterval(this.keepaliveTimer);
+            this.keepaliveTimer = null;
+        }
     }
 
     sendToServer(action, payload) {
@@ -192,8 +224,32 @@ class Receiver {
 
     onWsMessage(msg) {
         if (this.pc === null || this.ws === null || msg.data === '') { return; }
-        const eventData = JSON.parse(msg.data);
-        const payload = JSON.parse(atob(eventData.messagePayload));
+        let eventData;
+        try {
+            eventData = JSON.parse(msg.data);
+        } catch (err) {
+            console.warn(`[${this.signalJson.cam}] Failed to parse signaling message:`, err, msg.data);
+            return;
+        }
+
+        if (eventData.type === 'ping' || eventData.type === 'pong') {
+            console.debug(`[${this.signalJson.cam}] Mars signaling ${eventData.type}`);
+            return;
+        }
+
+        if (!eventData.messagePayload) {
+            console.debug(`[${this.signalJson.cam}] Ignoring signaling event without payload`, eventData);
+            return;
+        }
+
+        let payload;
+        try {
+            payload = JSON.parse(atob(eventData.messagePayload));
+        } catch (err) {
+            console.warn(`[${this.signalJson.cam}] Failed to decode signaling payload:`, err, eventData);
+            return;
+        }
+
         switch (eventData.messageType) {
             case 'SDP_OFFER':
             case 'SDP_ANSWER':
@@ -225,6 +281,31 @@ class Receiver {
         }
     }
 
+    onWsClose(evt) {
+        this.stopKeepalive();
+        const connected = this.pc && ['connected', 'completed'].includes(this.pc.iceConnectionState);
+        console.warn(
+            `[${this.signalJson.cam}] signaling websocket closed`,
+            { code: evt.code, reason: evt.reason, wasClean: evt.wasClean, connected },
+        );
+
+        if (this.isMars && connected) {
+            this.ws = null;
+            return;
+        }
+
+        this.onError(`signaling websocket closed (${evt.code})`);
+    }
+
+    onWsError(err) {
+        const connected = this.pc && ['connected', 'completed'].includes(this.pc.iceConnectionState);
+        console.warn(`[${this.signalJson.cam}] signaling websocket error`, err);
+        if (this.isMars && connected) {
+            return;
+        }
+        this.onError(err);
+    }
+
     onIceCandidate(evt) {
         if (this.restartTimeout !== null || evt.candidate === null) { return; }
         if (this.whep) {
@@ -251,6 +332,7 @@ class Receiver {
             .then((signalJson) => {
                 if (signalJson.result !== "ok") { return console.error("signaling json not ok"); }
                 this.signalJson = signalJson;
+                this.isMars = this.signalJson.provider === "mars";
             });
     }
 
@@ -261,6 +343,7 @@ class Receiver {
         if (err !== undefined) { console.error('Error:', err.toString()); }
         clearTimeout(this.iceConnectionTimer);
         this.iceConnectionTimer = null;
+        this.stopKeepalive();
 
         if (this.ws !== null) {
             this.ws.close();
