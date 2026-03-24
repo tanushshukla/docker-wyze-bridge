@@ -22,7 +22,7 @@ echo "Tag:        $TAG"
 echo "Version:    $VERSION"
 echo "Build Date: $BUILD_DATE"
 echo "Commit:     $GITHUB_SHA"
-echo "Platforms:  linux/amd64, linux/arm64, linux/arm/v7"
+echo "Platforms:  linux/amd64, linux/arm64"
 echo "════════════════════════════════════════════════════════"
 echo ""
 
@@ -34,7 +34,7 @@ fi
 
 # Detect build mode
 USE_BUILDX=false
-PLATFORMS="linux/amd64,linux/arm64,linux/arm/v7"
+PLATFORMS="linux/amd64,linux/arm64"
 
 if command -v docker &>/dev/null && docker buildx version &>/dev/null; then
     USE_BUILDX=true

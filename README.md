@@ -9,7 +9,7 @@ A high-performance, multi-architecture bridge to expose Wyze cameras as standard
 This update represents a fundamental shift in architecture. The legacy local LAN (TUTK) protocol is no longer functioning reliably for newer Wyze cameras (like the v4). This release migrates to a cloud-based KVS WebRTC flow bridged through go2rtc.
 
 [![Docker Hub](https://img.shields.io/badge/Docker%20Hub-aleximurdoch%2Fwyze--bridge-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/aleximurdoch/wyze-bridge)
-![Multi-Arch](https://img.shields.io/badge/arch-amd64%20%7C%20arm64%20%7C%20arm%2Fv7-success)
+![Multi-Arch](https://img.shields.io/badge/arch-amd64%20%7C%20arm64-success)
 
 ---
 
