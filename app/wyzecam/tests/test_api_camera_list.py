@@ -153,6 +153,61 @@ def test_get_camera_list_logs_skip_reason_for_missing_required_fields(monkeypatc
     get_home_devices.assert_called_once_with(ANY, "home-1")
 
 
+def test_get_camera_list_falls_back_to_v4_home_lookup(monkeypatch):
+    monkeypatch.setattr(
+        "wyzecam.api.get_homepage_object_list",
+        lambda auth: {
+            "device_list": [
+                {
+                    "product_type": "Camera",
+                    "device_params": {
+                        "p2p_id": "legacy-p2p",
+                        "p2p_type": 0,
+                        "ip": "",
+                        "camera_thumbnails": {"thumbnails_url": "https://legacy-thumb"},
+                    },
+                    "enr": "legacy-enr",
+                    "mac": "GW_DUO_80482C6E5E4D",
+                    "product_model": "GW_DUO",
+                    "nickname": "Bar Cam",
+                    "timezone_name": "Europe/London",
+                    "firmware_ver": "1.0.0.154",
+                }
+            ]
+        },
+    )
+    get_homes = Mock(return_value=[{"home_id": "home-from-v4", "role": 1}])
+    get_home_devices = Mock(
+        return_value={
+            "device_list": [
+                {
+                    "device_id": "GW_DUO_80482C6E5E4D",
+                    "device_param": {
+                        "firmware_version": "1.0.0.167",
+                        "thumbnail": {"url": "https://cloud-thumb"},
+                        "p2p": {"providers": ["mars", "webrtc"]},
+                    },
+                    "nickname": "Bar Cam",
+                    "device_model": "GW_DUO",
+                    "device_category": "Camera",
+                }
+            ]
+        }
+    )
+    monkeypatch.setattr("wyzecam.api.get_homes", get_homes)
+    monkeypatch.setattr("wyzecam.api.get_home_devices", get_home_devices)
+
+    cameras = get_camera_list(WyzeCredential(access_token="token", phone_id="phone"))
+
+    assert len(cameras) == 1
+    cam = cameras[0]
+    assert cam.mac == "GW_DUO_80482C6E5E4D"
+    assert cam.p2p_providers == ["mars", "webrtc"]
+    assert cam.uses_mars is True
+    get_homes.assert_called_once()
+    get_home_devices.assert_called_once_with(ANY, "home-from-v4")
+
+
 def test_get_camera_list_prefers_legacy_fields_and_logs_v4_validation(monkeypatch, caplog):
     monkeypatch.setenv("LOG_V4_VALIDATION", "true")
     monkeypatch.setattr(

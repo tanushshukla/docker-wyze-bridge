@@ -260,6 +260,38 @@ def get_home_devices(auth_info: WyzeCredential, home_id: str) -> dict[str, Any]:
 
     return validate_resp(resp)
 
+def get_homes(auth_info: WyzeCredential) -> list[dict[str, Any]]:
+    """Get homes from the newer v4 API."""
+    nonce = str(int(time.time() * 1000))
+    query = f"nonce={nonce}"
+    headers = sign_payload(auth_info, "9319141212m2ik", query)
+    resp = get(
+        f"{CLOUD_API}/v4/home?{query}",
+        headers=headers,
+        timeout=30,
+    )
+
+    data = validate_resp(resp)
+    return data if isinstance(data, list) else []
+
+def get_home_id(auth_info: WyzeCredential, data: Optional[dict[str, Any]] = None) -> Optional[str]:
+    home_id = None
+    if isinstance(data, dict):
+        home_id = data.get("home_id") or data.get("id")
+    if home_id:
+        return str(home_id)
+
+    homes = get_homes(auth_info)
+    for home in homes:
+        if isinstance(home, dict) and home.get("role") == 1 and home.get("home_id"):
+            return str(home["home_id"])
+
+    for home in homes:
+        if isinstance(home, dict) and home.get("home_id"):
+            return str(home["home_id"])
+
+    return None
+
 def _safe_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
@@ -453,7 +485,21 @@ def get_camera_list(auth_info: WyzeCredential) -> list[WyzeCamera]:
     cameras = _build_camera_list(data.get("device_list", []), "legacy home_page/get_object_list")
     home_id = data.get("home_id") or data.get("id")
     if home_id:
+        logger.debug(f"[API] Using home id from legacy response: {home_id}")
+    else:
+        logger.debug("[API] Legacy response missing home id; attempting v4 home lookup")
         try:
+            home_id = get_home_id(auth_info, data)
+            if home_id:
+                logger.debug(f"[API] Resolved home id from v4 home lookup: {home_id}")
+            else:
+                logger.debug("[API] Could not resolve a home id from v4 home lookup")
+        except Exception as ex:
+            logger.debug(f"[API] Could not resolve home id from v4 home lookup: [{type(ex).__name__}] {ex}")
+
+    if home_id:
+        try:
+            logger.debug(f"[API] Fetching v4 home devices for home id {home_id}")
             home_data = get_home_devices(auth_info, str(home_id))
             cloud_cameras = _build_camera_list(
                 home_data.get("device_list", []), "cloud v4/home/get-home-devices"
@@ -462,6 +508,8 @@ def get_camera_list(auth_info: WyzeCredential) -> list[WyzeCamera]:
             cameras = _merge_camera_lists(cameras, cloud_cameras)
         except Exception as ex:
             logger.debug(f"[API] Could not refresh camera list from v4 home devices: [{type(ex).__name__}] {ex}")
+    else:
+        logger.debug("[API] Skipping v4 home device enrichment because no home id was available")
 
     return cameras
 
