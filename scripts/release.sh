@@ -2,7 +2,7 @@
 set -e
 
 # Configuration
-IMAGE_NAME="ghcr.io/akeslo/docker-wyze-bridge"
+IMAGE_NAME="tanushshukla/wyze-bridge"
 TAG="${1:-latest}"
 BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
 GITHUB_SHA=$(git rev-parse HEAD 2>/dev/null || echo "unknown")

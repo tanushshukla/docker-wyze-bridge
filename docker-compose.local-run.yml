@@ -1,7 +1,7 @@
 services:
   wyze-bridge:
     container_name: wyze-bridge
-    image: tanushshukla/wyze-bridge:duo-test
+    image: tanushshukla/wyze-bridge:wyze-1.0.1
     restart: unless-stopped
     ports:
       - 11984:1984

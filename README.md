@@ -8,7 +8,7 @@ A high-performance, multi-architecture bridge to expose Wyze cameras as standard
 
 This update represents a fundamental shift in architecture. The legacy local LAN (TUTK) protocol is no longer functioning reliably for newer Wyze cameras (like the v4). This release migrates to a cloud-based KVS WebRTC flow bridged through go2rtc.
 
-[![GitHub Container Registry](https://img.shields.io/badge/GHCR-akeslo%2Fdocker--wyze--bridge-blue?logo=github)](https://github.com/akeslo/docker-wyze-bridge/pkgs/container/docker-wyze-bridge)
+[![Docker Hub](https://img.shields.io/badge/Docker%20Hub-tanushshukla%2Fwyze--bridge-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/tanushshukla/wyze-bridge)
 ![Multi-Arch](https://img.shields.io/badge/arch-amd64%20%7C%20arm64%20%7C%20arm%2Fv7-success)
 
 ---
@@ -51,7 +51,7 @@ Instead, it utilizes the Wyze Kinesis Video Stream (KVS) cloud feed:
 services:
   wyze-bridge:
     container_name: wyze-bridge
-    image: ghcr.io/akeslo/docker-wyze-bridge:latest
+    image: tanushshukla/wyze-bridge:wyze-1.0.1
     restart: unless-stopped
     ports:
       - 1984:1984 # go2rtc API/Stream
@@ -77,6 +77,11 @@ services:
     ```
 
 3.  Access the Web UI at: `http://localhost:5000`
+
+You can also pull the public image directly:
+```bash
+docker pull tanushshukla/wyze-bridge:wyze-1.0.1
+```
 
 ### Home Assistant
 

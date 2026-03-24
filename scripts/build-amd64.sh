@@ -3,7 +3,7 @@ set -e
 
 # Build and push script for AMD64 architecture only
 
-IMAGE_NAME="${IMAGE_NAME:-ghcr.io/akeslo/docker-wyze-bridge}"
+IMAGE_NAME="${IMAGE_NAME:-tanushshukla/wyze-bridge}"
 TAG="${TAG:-latest}"
 BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
 GITHUB_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "local")
