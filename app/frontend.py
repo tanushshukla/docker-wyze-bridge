@@ -246,11 +246,11 @@ def create_app():
     @app.route("/snapshot/<string:img_file>")
     @auth_required
     def snapshot(img_file: str):
-        """Serve the latest locally cached snapshot without cloud refresh."""
+        """Serve the latest local snapshot, falling back to a cloud thumbnail."""
         file_path = Path(config.IMG_PATH) / img_file
         if file_path.exists() and file_path.stat().st_size > 0:
             return send_from_directory(config.IMG_PATH, img_file)
-        return redirect("/static/notavailable.svg", code=307)
+        return thumbnail(img_file)
 
     @app.route("/thumb/<string:img_file>")
     @auth_required
@@ -258,13 +258,20 @@ def create_app():
         """Serve thumbnail with local prioritization and cloud fallback."""
         uri = Path(img_file).stem
         file_path = config.IMG_PATH + img_file
-        
+
+        # Ignore empty files left behind by failed snapshot/thumbnail writes.
+        if os.path.exists(file_path) and os.path.getsize(file_path) <= 0:
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+
         # Check if local file exists and is recent (e.g., < 180s)
         is_fresh = False
         if os.path.exists(file_path):
             age = time.time() - os.path.getmtime(file_path)
-            is_fresh = age < 180
-        
+            is_fresh = age < 180 and os.path.getsize(file_path) > 0
+
         # If stale or missing, try to update from cloud
         if not is_fresh:
             try:
@@ -272,9 +279,9 @@ def create_app():
             except Exception:
                 pass  # Ignore cloud errors, use local fallback
 
-        # Serve local file if it exists (even if stale)
-        if os.path.exists(file_path):
-             return send_from_directory(config.IMG_PATH, img_file)
+        # Serve local file if it exists and has image content.
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            return send_from_directory(config.IMG_PATH, img_file)
 
         return redirect("/static/notavailable.svg", code=307)
 

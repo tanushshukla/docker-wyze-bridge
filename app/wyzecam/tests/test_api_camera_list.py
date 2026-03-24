@@ -208,7 +208,7 @@ def test_get_camera_list_falls_back_to_v4_home_lookup(monkeypatch):
     get_home_devices.assert_called_once_with(ANY, "home-from-v4")
 
 
-def test_get_camera_list_prefers_legacy_fields_and_logs_v4_validation(monkeypatch, caplog):
+def test_get_camera_list_prefers_legacy_core_fields_and_cloud_thumbnail(monkeypatch, caplog):
     monkeypatch.setenv("LOG_V4_VALIDATION", "true")
     monkeypatch.setattr(
         "wyzecam.api.get_homepage_object_list",
@@ -259,7 +259,7 @@ def test_get_camera_list_prefers_legacy_fields_and_logs_v4_validation(monkeypatc
     cam = cameras[0]
     assert cam.mac == "GW_DUO_80482C6E5E4D"
     assert cam.firmware_ver == "1.0.0.154"
-    assert cam.thumbnail == "https://legacy-thumb"
+    assert cam.thumbnail == "https://cloud-thumb"
     assert cam.enr == "legacy-enr"
     assert cam.ip == "192.168.1.10"
     assert cam.p2p_type == 3

@@ -395,12 +395,13 @@ def _merge_camera(existing: WyzeCamera, incoming: WyzeCamera) -> WyzeCamera:
     updates: dict[str, Any] = {}
     for field_name, value in incoming.model_dump().items():
         current = getattr(existing, field_name)
+        if field_name == "thumbnail" and value and value != current:
+            updates[field_name] = value
+            continue
         if current in (None, "", [], {}):
             if value not in (None, "", [], {}):
                 updates[field_name] = value
             continue
-        if field_name == "thumbnail" and not current and value:
-            updates[field_name] = value
 
     return existing.model_copy(update=updates)
 

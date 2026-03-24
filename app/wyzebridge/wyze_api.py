@@ -258,13 +258,12 @@ class WyzeApi:
         logger.info(f'☁️ Pulling "{uri}" thumbnail to {save_to}')
 
         try:
-            img = get(thumb, timeout=10)
-            img.raise_for_status()
+            img, final_url = self._download_thumbnail(thumb)
 
             with open(save_to, "wb") as f:
                 f.write(img.content)
 
-            if modified := s3_timestamp or img.headers.get("Last-Modified"):
+            if modified := url_timestamp(final_url) or s3_timestamp or img.headers.get("Last-Modified"):
                 ts_format = "%a, %d %b %Y %H:%M:%S %Z"
 
                 if isinstance(modified, int):
@@ -281,8 +280,7 @@ class WyzeApi:
                 if fresh_thumb and fresh_thumb != thumb:
                     logger.info(f"[API] Retrying thumbnail fetch with refreshed URL")
                     try:
-                        img = get(fresh_thumb, timeout=10)
-                        img.raise_for_status()
+                        img, _ = self._download_thumbnail(fresh_thumb)
                         with open(save_to, "wb") as f:
                             f.write(img.content)
                         return True
@@ -297,6 +295,29 @@ class WyzeApi:
         except Exception as ex:
             logger.error(f"[API] Error pulling thumbnail: [{type(ex).__name__}] {ex}")
             return False
+
+    def _download_thumbnail(self, thumb: str):
+        headers: dict[str, str] = {}
+        if "prod-sight-safe-auth.wyze.com" in thumb and self.auth and self.auth.access_token:
+            headers = {
+                "client-name": "my.wyze.com",
+                "wyze-authorization": self.auth.access_token,
+            }
+
+        img = get(thumb, headers=headers, timeout=10)
+        img.raise_for_status()
+
+        content_type = img.headers.get("Content-Type", "")
+        if content_type.startswith("image/"):
+            return img, thumb
+
+        resolved_url = _extract_thumbnail_redirect(img)
+        if not resolved_url:
+            return img, thumb
+
+        redirected = get(resolved_url, timeout=10)
+        redirected.raise_for_status()
+        return redirected, resolved_url
 
     @authenticated
     def get_kvs_signal(self, cam_name: str) -> Optional[dict]:
@@ -539,6 +560,19 @@ def pickle_dump(name: str, data: object):
     with open(TOKEN_PATH + name + ".pickle", "wb") as f:
         logger.info(f"💾 Saving '{name}' to local cache...")
         pickle.dump(data, f)
+
+
+def _extract_thumbnail_redirect(response) -> Optional[str]:
+    with contextlib.suppress(ValueError, TypeError):
+        payload = response.json()
+        if isinstance(payload, str) and payload.startswith("http"):
+            return payload
+
+    text = response.text.strip().strip('"')
+    if text.startswith("http"):
+        return text
+
+    return None
 
 def parse_token(access_token: Optional[str]) -> tuple[Optional[str], Optional[str]]:
     if not access_token:
