@@ -1,7 +1,7 @@
 import uuid
 from typing import Any, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from wyzebridge.bridge_utils import clean_cam_name
 from wyzebridge.config import URI_MAC, URI_SEPARATOR
@@ -134,6 +134,7 @@ class WyzeCamera(BaseModel):
     parent_enr: Optional[str]
     parent_mac: Optional[str]
     thumbnail: Optional[str]
+    p2p_providers: list[str] = Field(default_factory=list)
 
     def set_camera_info(self, info: dict[str, Any]) -> None:
         # Called internally as part of WyzeIOTC.connect_and_auth()
@@ -161,9 +162,13 @@ class WyzeCamera(BaseModel):
         return self.product_model not in NO_WEBRTC
 
     @property
+    def uses_mars(self) -> bool:
+        return "mars" in self.p2p_providers
+
+    @property
     def kvs_available(self) -> bool:
         """Check if camera supports KVS WebRTC and is online."""
-        return self.webrtc_support and self.ip is not None
+        return self.webrtc_support and not self.uses_mars and self.ip is not None
 
     @property
     def is_2k(self) -> bool:

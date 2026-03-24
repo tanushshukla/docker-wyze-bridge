@@ -289,6 +289,7 @@ def _normalize_camera(device: dict[str, Any], source: str = "unknown") -> Option
     providers = p2p.get("providers")
     if not isinstance(providers, list):
         providers = []
+    providers = [provider for provider in providers if isinstance(provider, str)]
 
     p2p_id: Optional[str] = device_params.get("p2p_id")
     p2p_type: Optional[int] = device_params.get("p2p_type")
@@ -355,6 +356,7 @@ def _normalize_camera(device: dict[str, Any], source: str = "unknown") -> Option
         parent_enr=parent_enr,
         parent_mac=parent_mac,
         thumbnail=thumbnail,
+        p2p_providers=providers,
     )
 
 def _merge_camera(existing: WyzeCamera, incoming: WyzeCamera) -> WyzeCamera:
@@ -517,6 +519,52 @@ def get_cam_webrtc(auth_info: WyzeCredential, mac_id: str) -> dict:
         "ClientId": auth_info.phone_id,
         "signalToken": resp_json["results"]["signalToken"],
         "servers": resp_json["results"]["servers"],
+    }
+
+def get_cam_webrtc_v4(auth_info: WyzeCredential, camera: WyzeCamera) -> dict:
+    """Get the newer v4 WebRTC bootstrap used by Mars-backed cameras."""
+    if not auth_info.access_token:
+        raise AccessTokenError()
+
+    payload = {
+        "device_list": [
+            {
+                "device_id": camera.mac,
+                "device_model": camera.product_model,
+                "provider": "webrtc",
+                "parameters": {"use_trickle": True},
+            }
+        ],
+        "nonce": int(time.time() * 1000),
+    }
+    body = sort_dict(payload)
+    headers = sign_payload(auth_info, "9319141212m2ik", body)
+    resp = post(
+        "https://app.wyzecam.com/app/v4/camera/get-streams",
+        data=body,
+        headers=headers,
+        timeout=30,
+    )
+
+    results = validate_resp(resp)
+    if not isinstance(results, list) or not results:
+        raise ValueError(f"No stream data returned for {camera.mac}")
+
+    params = results[0].get("params") or {}
+    servers = []
+    for server in params.get("ice_servers") or []:
+        if not isinstance(server, dict):
+            continue
+        server_copy = dict(server)
+        if "url" in server_copy:
+            server_copy["urls"] = server_copy.pop("url")
+        servers.append(server_copy)
+
+    return {
+        "provider": results[0].get("provider", "webrtc"),
+        "signalingUrl": urllib.parse.unquote(params.get("signaling_url", "")),
+        "authToken": params.get("auth_token", ""),
+        "servers": servers,
     }
 
 def validate_resp(resp: Response) -> dict:

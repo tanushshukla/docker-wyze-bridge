@@ -15,7 +15,7 @@ from requests import get
 from requests.exceptions import ConnectionError, HTTPError, RequestException
 
 from wyzecam.api_models import WyzeAccount, WyzeCamera, WyzeCredential
-from wyzecam.api import AccessTokenError, RateLimitError, WyzeAPIError, get_cam_webrtc, get_camera_list, get_user_info, login, post_device, refresh_token, run_action
+from wyzecam.api import AccessTokenError, RateLimitError, WyzeAPIError, get_cam_webrtc, get_cam_webrtc_v4, get_camera_list, get_user_info, login, post_device, refresh_token, run_action
 from wyzebridge.auth import get_secret
 from wyzebridge.bridge_utils import env_bool, env_list
 from wyzebridge.config import IMG_PATH, MOTION, TOKEN_PATH
@@ -311,13 +311,29 @@ class WyzeApi:
             return {"result": "Camera is missing a device identifier required for WebRTC signaling", "cam": cam_name}
 
         try:
+            if cam.uses_mars:
+                logger.info(f"[API] {cam_name} [{cam.product_model}] uses Wyze Mars signaling via v4 get-streams")
+                mars = get_cam_webrtc_v4(self.auth, cam)
+                logger.warning(
+                    f"[API] {cam_name} [{cam.product_model}] fetched Mars signaling bootstrap, "
+                    "but docker-wyze-bridge does not yet implement the Mars websocket protocol"
+                )
+                return mars | {
+                    "result": "Wyze Mars signaling is not yet implemented by docker-wyze-bridge",
+                    "cam": cam_name,
+                    "provider": "mars",
+                }
+
             logger.info("☁️ Fetching signaling data from the Wyze API...")
             wss = get_cam_webrtc(self.auth, cam.mac)
-            return wss | {"result": "ok", "cam": cam_name}
+            return wss | {"result": "ok", "cam": cam_name, "provider": "kvs"}
         except (HTTPError, WyzeAPIError) as ex:
             logger.warning(f"[API] Error fetching signaling data [{type(ex).__name__}] {ex}")
             if isinstance(ex, HTTPError) and ex.response.status_code == 404:
                 ex = "Camera does not support WebRTC"
+            return {"result": str(ex), "cam": cam_name}
+        except Exception as ex:
+            logger.warning(f"[API] Error fetching signaling data [{type(ex).__name__}] {ex}")
             return {"result": str(ex), "cam": cam_name}
 
     def refresh_token(self):

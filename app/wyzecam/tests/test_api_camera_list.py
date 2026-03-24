@@ -88,6 +88,8 @@ def test_get_camera_list_includes_new_v4_duo_cam_pan(monkeypatch):
     assert cam.nickname == "Bar Cam"
     assert cam.thumbnail == "https://duo-thumb"
     assert cam.p2p_type == 2
+    assert cam.p2p_providers == ["mars", "webrtc"]
+    assert cam.uses_mars is True
     assert cam.webrtc_support is True
 
 
@@ -121,6 +123,8 @@ def test_get_camera_list_keeps_unknown_new_models(monkeypatch):
     assert cam.mac == "UNKNOWN_1234"
     assert cam.product_model == "UNKNOWN_MODEL"
     assert cam.model_name == "UNKNOWN_MODEL"
+    assert cam.p2p_providers == ["webrtc"]
+    assert cam.uses_mars is False
     assert cam.webrtc_support is True
 
 
