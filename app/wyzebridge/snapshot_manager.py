@@ -15,6 +15,7 @@ class SnapshotManager(Thread):
         self.running = False
         self._lock = Lock()
         self.go2rtc_api = "http://localhost:1984/api/frame.jpeg"
+        self.request_timeout = 5
 
     def run(self):
         logger.info(f"[SNAPSHOT] Starting snapshot thread (Interval: {self.interval}s)")
@@ -46,7 +47,10 @@ class SnapshotManager(Thread):
     def save_snapshot(self, cam_name: str) -> bool:
         """Fetch frame from go2rtc and save to disk."""
         try:
-            resp = requests.get(f"{self.go2rtc_api}?src={cam_name}", timeout=15)
+            resp = requests.get(
+                f"{self.go2rtc_api}?src={cam_name}",
+                timeout=(3, self.request_timeout),
+            )
             if resp.status_code == 200:
                 img_data = resp.content
                 # Save 'latest' for WebUI

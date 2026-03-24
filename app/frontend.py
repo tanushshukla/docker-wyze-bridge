@@ -104,6 +104,7 @@ def create_app():
                 "enabled": uri not in wb.disabled_cams,
                 "img_url": f"/thumb/{uri}.jpg",
                 "webrtc_url": f"/webrtc/{uri}",
+                "preview_url": f"{request.host_url.rstrip('/')}/webrtc/{uri}",
                 "rtsp_url": f"rtsp://{request.host.split(':')[0]}:8554/{uri}",
                 "mac": cam.mac,
                 "firmware_ver": cam.firmware_ver,
