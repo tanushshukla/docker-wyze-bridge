@@ -611,8 +611,10 @@ def get_cam_webrtc_v4(auth_info: WyzeCredential, camera: WyzeCamera) -> dict:
 
     return {
         "provider": results[0].get("provider", "webrtc"),
-        "signalingUrl": urllib.parse.unquote(params.get("signaling_url", "")),
+        # Mars signaling tokens are URL-encoded and must stay encoded for GW_ cameras.
+        "signalingUrl": params.get("signaling_url", ""),
         "authToken": params.get("auth_token", ""),
+        "ClientId": auth_info.phone_id,
         "servers": servers,
     }
 

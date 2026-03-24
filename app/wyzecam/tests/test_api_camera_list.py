@@ -266,3 +266,36 @@ def test_get_camera_list_prefers_legacy_core_fields_and_cloud_thumbnail(monkeypa
     assert "V4 validation summary: legacy=1 cloud=1 shared=1 legacy_only=0 cloud_only=0" in caplog.text
     assert "field differences for Bar Cam [GW_DUO]" in caplog.text
     assert "missing critical fields for Bar Cam [GW_DUO] in cloud data: enr, ip" in caplog.text
+
+
+def test_get_cam_webrtc_v4_keeps_encoded_mars_signaling_url(monkeypatch):
+    from wyzecam.api import get_cam_webrtc_v4
+
+    monkeypatch.setattr(
+        "wyzecam.api.post",
+        lambda *args, **kwargs: Mock(
+            json=lambda: {
+                "code": "1",
+                "data": [
+                    {
+                        "provider": "webrtc",
+                        "params": {
+                            "signaling_url": "wss://wyze-mars-webcsrv.wyzecam.com?token=abc%2Bdef",
+                            "auth_token": "",
+                            "ice_servers": [{"url": "stun:example.com:3478"}],
+                        },
+                    }
+                ],
+            },
+            headers={},
+            raise_for_status=lambda: None,
+        ),
+    )
+
+    cam = Mock(mac="GW_DUO_80482C6E5E4D", product_model="GW_DUO")
+    auth = WyzeCredential(access_token="token", phone_id="phone")
+
+    data = get_cam_webrtc_v4(auth, cam)
+
+    assert data["signalingUrl"] == "wss://wyze-mars-webcsrv.wyzecam.com?token=abc%2Bdef"
+    assert data["ClientId"] == "phone"

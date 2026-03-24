@@ -42,7 +42,7 @@ def test_get_kvs_signal_keeps_legacy_kvs_path():
     mars.assert_not_called()
 
 
-def test_get_kvs_signal_reports_mars_as_not_yet_supported():
+def test_get_kvs_signal_returns_mars_bootstrap():
     cam = WyzeCamera(
         p2p_id=None,
         p2p_type=2,
@@ -64,12 +64,19 @@ def test_get_kvs_signal_reports_mars_as_not_yet_supported():
 
     with patch("wyzebridge.wyze_api.get_cam_webrtc") as legacy, patch(
         "wyzebridge.wyze_api.get_cam_webrtc_v4",
-        return_value={"signalingUrl": "wss://mars", "servers": [], "authToken": "", "provider": "webrtc"},
+        return_value={
+            "signalingUrl": "wss://mars?token=abc%2Bdef",
+            "servers": [],
+            "authToken": "",
+            "ClientId": "phone",
+            "provider": "webrtc",
+        },
     ) as mars:
         result = api.get_kvs_signal(cam.name_uri)
 
     assert result["provider"] == "mars"
-    assert result["signalingUrl"] == "wss://mars"
-    assert "Mars websocket handshake is not yet supported" in result["result"]
+    assert result["signalingUrl"] == "wss://mars?token=abc%2Bdef"
+    assert result["result"] == "ok"
+    assert result["ClientId"] == "phone"
     legacy.assert_not_called()
     mars.assert_called_once_with(api.auth, cam)
