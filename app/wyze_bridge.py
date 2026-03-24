@@ -8,7 +8,7 @@ from threading import Thread
 from wyzebridge.build_config import BUILD_STR, VERSION
 from wyzebridge.config import HASS_TOKEN, IMG_PATH, TOKEN_PATH
 from wyzebridge.auth import WbAuth
-from wyzebridge.bridge_utils import migrate_path
+from wyzebridge.bridge_utils import env_bool, migrate_path
 from wyzebridge.hass import setup_hass
 from wyzebridge.logging import logger
 from wyzebridge.wyze_api import WyzeApi
@@ -152,8 +152,9 @@ class WyzeBridge(Thread):
             logger.error("[BRIDGE] Failed to start go2rtc")
             return signal.raise_signal(signal.SIGINT)
 
+        external_rtsp_port = env_bool("WB_RTSP_PORT", "8554", style="original")
         logger.info(f"🎬 {len(self.cameras)} camera(s) ready for streaming")
-        logger.info(f"📺 RTSP streams available at rtsp://HOST:8554/<camera-name>")
+        logger.info(f"📺 RTSP streams available at rtsp://HOST:{external_rtsp_port}/<camera-name>")
 
         # Start snapshot manager
         try:

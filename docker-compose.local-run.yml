@@ -1,0 +1,30 @@
+services:
+  wyze-bridge:
+    container_name: wyze-bridge
+    image: tanushshukla/wyze-bridge:duo-test
+    restart: unless-stopped
+    ports:
+      - 11984:1984
+      - 18554:8554
+      - 18555:8555
+      - 15000:5000
+      - 17979:7979
+    volumes:
+      - ./.local-test/snapshots:/img
+      - ./.local-test/config:/config
+      - ./.local-test/tokens:/tokens
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - WYZE_EMAIL=${WYZE_EMAIL}
+      - WYZE_PASSWORD=${WYZE_PASSWORD}
+      - API_ID=${API_ID}
+      - API_KEY=${API_KEY}
+      - WB_AUTH=False
+      - LOG_LEVEL=DEBUG
+      - LOG_V4_VALIDATION=true
+      - WB_RTSP_PORT=18554
+      - MARS_PROXY_PORT=7979
+      - MARS_PROXY_EXTERNAL_PORT=17979
+      - SNAPSHOT=180
+      - SNAPSHOT_FORMAT={cam_name}/%Y-%m-%d/%H-%M-%S.jpg
+      - SNAPSHOT_KEEP=7d

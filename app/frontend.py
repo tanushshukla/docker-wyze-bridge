@@ -23,6 +23,13 @@ from wyzebridge import config, web_ui
 from wyzebridge.auth import WbAuth
 from wyzebridge.web_ui import url_for
 
+
+def get_external_rtsp_port() -> str:
+    """Return the RTSP port exposed to UI clients."""
+    port = os.getenv("WB_RTSP_PORT", "").strip()
+    return port or "8554"
+
+
 def create_app():
     app = Flask(__name__)
     wb = WyzeBridge()
@@ -37,6 +44,9 @@ def create_app():
             return web_ui.auth.login_required(view)(*args, **kwargs)
 
         return wrapped_view
+
+    def rtsp_url(cam_name: str) -> str:
+        return f"rtsp://{request.host.split(':')[0]}:{get_external_rtsp_port()}/{cam_name}"
 
     @app.route("/login", methods=["GET", "POST"])
     def wyze_login():
@@ -106,7 +116,7 @@ def create_app():
                 "snapshot_url": f"{request.host_url.rstrip('/')}/snapshot/{uri}.jpg",
                 "webrtc_url": f"/webrtc/{uri}",
                 "preview_url": f"{request.host_url.rstrip('/')}/webrtc/{uri}",
-                "rtsp_url": f"rtsp://{request.host.split(':')[0]}:8554/{uri}",
+                "rtsp_url": rtsp_url(uri),
                 "mac": cam.mac,
                 "firmware_ver": cam.firmware_ver,
                 "is_battery": cam.is_battery,
@@ -183,7 +193,7 @@ def create_app():
                 "product_model": cam.product_model,
                 "webrtc_support": cam.webrtc_support,
                 "webrtc_url": f"/webrtc/{cam_name}",
-                "rtsp_url": f"rtsp://{request.host.split(':')[0]}:8554/{cam_name}",
+                "rtsp_url": rtsp_url(cam_name),
                 "img_url": f"/snapshot/{cam_name}.jpg",
                 "snapshot_url": f"{request.host_url.rstrip('/')}/snapshot/{cam_name}.jpg",
                 "mac": cam.mac,
@@ -194,7 +204,7 @@ def create_app():
     @app.route("/api/<cam_name>/rtsp")
     @auth_required
     def api_rtsp_url(cam_name: str):
-        return {"rtsp_url": f"rtsp://{request.host.split(':')[0]}:8554/{cam_name}"}
+        return {"rtsp_url": rtsp_url(cam_name)}
 
     @app.route("/api/<cam_name>/start", methods=["POST"])
     @auth_required
