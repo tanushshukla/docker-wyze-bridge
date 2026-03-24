@@ -70,6 +70,6 @@ def test_get_kvs_signal_reports_mars_as_not_yet_supported():
 
     assert result["provider"] == "mars"
     assert result["signalingUrl"] == "wss://mars"
-    assert "not yet implemented" in result["result"]
+    assert "Mars websocket handshake is not yet supported" in result["result"]
     legacy.assert_not_called()
     mars.assert_called_once_with(api.auth, cam)

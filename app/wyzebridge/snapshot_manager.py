@@ -53,6 +53,9 @@ class SnapshotManager(Thread):
             )
             if resp.status_code == 200:
                 img_data = resp.content
+                if not img_data:
+                    logger.debug(f"[SNAPSHOT] Empty response body for {cam_name}")
+                    return False
                 # Save 'latest' for WebUI
                 with open(f"{IMG_PATH}{cam_name}.jpg", "wb") as f:
                     f.write(img_data)

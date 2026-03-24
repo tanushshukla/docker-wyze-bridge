@@ -316,10 +316,13 @@ class WyzeApi:
                 mars = get_cam_webrtc_v4(self.auth, cam)
                 logger.warning(
                     f"[API] {cam_name} [{cam.product_model}] fetched Mars signaling bootstrap, "
-                    "but docker-wyze-bridge does not yet implement the Mars websocket protocol"
+                    "but the upstream Mars websocket handshake is not yet supported by docker-wyze-bridge/go2rtc"
                 )
                 return mars | {
-                    "result": "Wyze Mars signaling is not yet implemented by docker-wyze-bridge",
+                    "result": (
+                        "Wyze Mars websocket handshake is not yet supported by "
+                        "docker-wyze-bridge/go2rtc"
+                    ),
                     "cam": cam_name,
                     "provider": "mars",
                 }
