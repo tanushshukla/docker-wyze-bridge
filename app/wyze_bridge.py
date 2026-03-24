@@ -92,13 +92,19 @@ class WyzeBridge(Thread):
         if streams_status:
             result["streams"] = {
                 uri: {
-                    "producers": len(info.get("producers", [])),
-                    "consumers": len(info.get("consumers", [])),
+                    "producers": self._stream_count(info, "producers"),
+                    "consumers": self._stream_count(info, "consumers"),
                     "fail_count": self.go2rtc._stream_fail_counts.get(uri, 0),
                 }
                 for uri, info in streams_status.items()
             }
         return result
+
+    @staticmethod
+    def _stream_count(info: dict, key: str) -> int:
+        """Return a safe count for go2rtc list fields that may be null."""
+        values = info.get(key) or []
+        return len(values) if isinstance(values, list) else 0
 
     def start(self, fresh_data: bool = False) -> None:
         """Initialize the bridge synchronously."""
@@ -124,7 +130,15 @@ class WyzeBridge(Thread):
     def _initialize(self, fresh_data: bool = False) -> None:
         """Login, setup cameras, configure and start go2rtc."""
         self.api.login(fresh_data=fresh_data)
-        WbAuth.set_email(email=self.api.get_user().email, force=fresh_data)
+
+        user = self.api.get_user()
+        auth_email = user.email if user else self.api.creds.email
+        if auth_email:
+            WbAuth.set_email(email=auth_email, force=fresh_data)
+        else:
+            logger.warning(
+                "[AUTH] User profile lookup failed; continuing without updating WebUI auth email"
+            )
 
         # Discover cameras and configure go2rtc
         self.setup_cameras()

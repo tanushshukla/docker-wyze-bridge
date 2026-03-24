@@ -103,6 +103,20 @@ This will show:
 - API request/response details
 - Connection state transitions
 
+To compare legacy `v2` camera discovery with the newer `v4` home API during migration testing:
+
+```yaml
+environment:
+  - LOG_LEVEL=DEBUG
+  - LOG_V4_VALIDATION=true
+```
+
+This adds:
+- A per-refresh summary of cameras seen by `v2` and `v4`
+- Warnings for cameras only seen by one API
+- Field-level differences for matching cameras
+- Warnings when `v4` is missing identifiers that existing controls and signaling depend on
+
 ---
 
 ## Getting Help

@@ -1,5 +1,6 @@
 import hmac
 import json
+import logging
 import time
 import urllib.parse
 import uuid
@@ -11,9 +12,23 @@ from typing import Any, Optional
 from requests import PreparedRequest, Response, get, post
 
 from wyzebridge.build_config import APP_VERSION, IOS_VERSION, VERSION
+from wyzebridge.bridge_utils import env_bool
 from wyzecam.api_models import WyzeAccount, WyzeCamera, WyzeCredential
 
 SCALE_USER_AGENT = f"Wyze/{APP_VERSION} (iPhone; iOS {IOS_VERSION}; Scale/3.00)"
+logger = logging.getLogger("WyzeBridge")
+VALIDATION_FIELDS = (
+    "product_model",
+    "nickname",
+    "firmware_ver",
+    "timezone_name",
+    "mac",
+    "enr",
+    "ip",
+    "p2p_type",
+    "thumbnail",
+)
+CRITICAL_V4_FIELDS = ("mac", "product_model", "firmware_ver", "thumbnail", "enr", "ip", "p2p_type")
 AUTH_API = "https://auth-prod.api.wyze.com"
 WYZE_API = "https://api.wyzecam.com/app"
 CLOUD_API = "https://app-core.cloud.wyze.com/app"
@@ -226,63 +241,227 @@ def get_homepage_object_list(auth_info: WyzeCredential) -> dict[str, Any]:
 
     return validate_resp(resp)
 
+def get_home_devices(auth_info: WyzeCredential, home_id: str) -> dict[str, Any]:
+    """Get all devices for a specific home from the newer v4 API."""
+    payload = {
+        "device_category": "camera",
+        "env": "",
+        "home_id": home_id,
+        "nonce": str(int(time.time() * 1000)),
+    }
+    body = sort_dict(payload)
+    headers = sign_payload(auth_info, "9319141212m2ik", body)
+    resp = post(
+        f"{CLOUD_API}/v4/home/get-home-devices",
+        data=body,
+        headers=headers,
+        timeout=30,
+    )
+
+    return validate_resp(resp)
+
+def _safe_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+def _coalesce(*values: Any) -> Any:
+    return next((value for value in values if value is not None), None)
+
+def _camera_label(device: dict[str, Any], fallback: str = "<unknown>") -> str:
+    return (
+        device.get("nickname")
+        or device.get("device_id")
+        or device.get("mac")
+        or device.get("product_model")
+        or device.get("device_model")
+        or fallback
+    )
+
+def _normalize_camera(device: dict[str, Any], source: str = "unknown") -> Optional[WyzeCamera]:
+    product_type = _coalesce(device.get("product_type"), device.get("device_category"))
+    if product_type != "Camera":
+        logger.debug(
+            f"[API] Skipping non-camera device from {source}: {_camera_label(device)} [{product_type=}]"
+        )
+        return None
+
+    device_params = _safe_dict(device.get("device_params")) or _safe_dict(device.get("device_param"))
+    p2p = _safe_dict(device_params.get("p2p"))
+    providers = p2p.get("providers")
+    if not isinstance(providers, list):
+        providers = []
+
+    p2p_id: Optional[str] = device_params.get("p2p_id")
+    p2p_type: Optional[int] = device_params.get("p2p_type")
+    ip: Optional[str] = device_params.get("ip")
+    enr: Optional[str] = device.get("enr")
+    mac: Optional[str] = _coalesce(device.get("mac"), device.get("device_id"))
+    product_model: Optional[str] = _coalesce(
+        device.get("product_model"), device.get("device_model")
+    )
+    nickname: Optional[str] = device.get("nickname")
+    timezone_name: Optional[str] = device.get("timezone_name")
+    firmware_ver: Optional[str] = _coalesce(
+        device.get("firmware_ver"), device_params.get("firmware_version")
+    )
+    dtls: Optional[int] = device_params.get("dtls")
+    parent_dtls: Optional[int] = device_params.get("main_device_dtls")
+    parent_enr: Optional[str] = device.get("parent_device_enr")
+    parent_mac: Optional[str] = device.get("parent_device_mac")
+    thumbnail = _coalesce(
+        _safe_dict(device_params.get("camera_thumbnails")).get("thumbnails_url"),
+        _safe_dict(device_params.get("thumbnail")).get("url"),
+    )
+
+    missing_required = []
+    if not mac:
+        missing_required.append("mac/device_id")
+    if not product_model:
+        missing_required.append("product_model/device_model")
+    if missing_required:
+        logger.debug(
+            f"[API] Skipping camera from {source}: {_camera_label(device)} "
+            f"missing {', '.join(missing_required)}"
+        )
+        return None
+
+    missing_optional = []
+    if not p2p_type and not providers:
+        missing_optional.append("p2p_type/providers")
+    if not ip:
+        missing_optional.append("ip")
+    if not enr:
+        missing_optional.append("enr")
+    if missing_optional:
+        logger.debug(
+            f"[API] Using partial camera metadata from {source}: {_camera_label(device)} "
+            f"missing {', '.join(missing_optional)}"
+        )
+
+    if not p2p_type and providers:
+        p2p_type = len(providers)
+
+    return WyzeCamera(
+        p2p_id=p2p_id,
+        p2p_type=p2p_type,
+        ip=ip,
+        enr=enr,
+        mac=mac,
+        product_model=product_model,
+        nickname=nickname,
+        timezone_name=timezone_name,
+        firmware_ver=firmware_ver,
+        dtls=dtls,
+        parent_dtls=parent_dtls,
+        parent_enr=parent_enr,
+        parent_mac=parent_mac,
+        thumbnail=thumbnail,
+    )
+
+def _merge_camera(existing: WyzeCamera, incoming: WyzeCamera) -> WyzeCamera:
+    updates: dict[str, Any] = {}
+    for field_name, value in incoming.model_dump().items():
+        current = getattr(existing, field_name)
+        if current in (None, "", [], {}):
+            if value not in (None, "", [], {}):
+                updates[field_name] = value
+            continue
+        if field_name == "thumbnail" and not current and value:
+            updates[field_name] = value
+
+    return existing.model_copy(update=updates)
+
+def _build_camera_list(devices: list[dict[str, Any]], source: str) -> list[WyzeCamera]:
+    cameras: list[WyzeCamera] = []
+    for device in devices:
+        if cam := _normalize_camera(device, source):
+            cameras.append(cam)
+    return cameras
+
+def _merge_camera_lists(*camera_lists: list[WyzeCamera]) -> list[WyzeCamera]:
+    cameras_by_id: dict[str, WyzeCamera] = {}
+    for camera_list in camera_lists:
+        for camera in camera_list:
+            existing = cameras_by_id.get(camera.mac)
+            cameras_by_id[camera.mac] = _merge_camera(existing, camera) if existing else camera
+    return list(cameras_by_id.values())
+
+def _is_missing(value: Any) -> bool:
+    return value in (None, "", [], {})
+
+def _log_v4_validation(legacy_cameras: list[WyzeCamera], cloud_cameras: list[WyzeCamera]) -> None:
+    if not env_bool("LOG_V4_VALIDATION", style="bool"):
+        return
+
+    legacy_by_id = {cam.mac: cam for cam in legacy_cameras}
+    cloud_by_id = {cam.mac: cam for cam in cloud_cameras}
+    only_legacy = sorted(set(legacy_by_id) - set(cloud_by_id))
+    only_cloud = sorted(set(cloud_by_id) - set(legacy_by_id))
+    shared = sorted(set(legacy_by_id) & set(cloud_by_id))
+
+    logger.info(
+        f"[API] V4 validation summary: legacy={len(legacy_cameras)} "
+        f"cloud={len(cloud_cameras)} shared={len(shared)} "
+        f"legacy_only={len(only_legacy)} cloud_only={len(only_cloud)}"
+    )
+
+    for cam_id in only_legacy:
+        cam = legacy_by_id[cam_id]
+        logger.warning(
+            f"[API] V4 validation: legacy-only camera {cam.nickname or cam.name_uri} [{cam.product_model}]"
+        )
+
+    for cam_id in only_cloud:
+        cam = cloud_by_id[cam_id]
+        logger.info(
+            f"[API] V4 validation: cloud-only camera {cam.nickname or cam.name_uri} [{cam.product_model}]"
+        )
+
+    for cam_id in shared:
+        legacy = legacy_by_id[cam_id]
+        cloud = cloud_by_id[cam_id]
+        diffs = []
+        for field_name in VALIDATION_FIELDS:
+            legacy_value = getattr(legacy, field_name)
+            cloud_value = getattr(cloud, field_name)
+            if legacy_value != cloud_value:
+                diffs.append(f"{field_name}={legacy_value!r}->{cloud_value!r}")
+
+        if diffs:
+            logger.info(
+                f"[API] V4 validation: field differences for {legacy.nickname or legacy.name_uri} "
+                f"[{legacy.product_model}] {', '.join(diffs)}"
+            )
+
+        missing_critical = [
+            field_name
+            for field_name in CRITICAL_V4_FIELDS
+            if not _is_missing(getattr(legacy, field_name))
+            and _is_missing(getattr(cloud, field_name))
+        ]
+        if missing_critical:
+            logger.warning(
+                f"[API] V4 validation: missing critical fields for "
+                f"{legacy.nickname or legacy.name_uri} [{legacy.product_model}] "
+                f"in cloud data: {', '.join(missing_critical)}"
+            )
+
 def get_camera_list(auth_info: WyzeCredential) -> list[WyzeCamera]:
     """Return a list of all cameras on the account."""
     data = get_homepage_object_list(auth_info)
-    result = []
-    for device in data["device_list"]:
-        if device["product_type"] != "Camera":
-            continue
-
-        device_params = device.get("device_params", {})
-        p2p_id: Optional[str] = device_params.get("p2p_id")
-        p2p_type: Optional[int] = device_params.get("p2p_type")
-        ip: Optional[str] = device_params.get("ip")
-        enr: Optional[str] = device.get("enr")
-        mac: Optional[str] = device.get("mac")
-        product_model: Optional[str] = device.get("product_model")
-        nickname: Optional[str] = device.get("nickname")
-        timezone_name: Optional[str] = device.get("timezone_name")
-        firmware_ver: Optional[str] = device.get("firmware_ver")
-        dtls: Optional[int] = device_params.get("dtls")
-        parent_dtls: Optional[int] = device_params.get("main_device_dtls")
-        parent_enr: Optional[str] = device.get("parent_device_enr")
-        parent_mac: Optional[str] = device.get("parent_device_mac")
-        thumbnail: Optional[str] = device_params.get("camera_thumbnails").get(
-            "thumbnails_url"
-        )
-
-        if not p2p_type:
-            continue
-        if not ip:
-            continue
-        if not enr:
-            continue
-        # above added, validate
-        if not mac:
-            continue
-        if not product_model:
-            continue
-
-        result.append(
-            WyzeCamera(
-                p2p_id=p2p_id,
-                p2p_type=p2p_type,
-                ip=ip,
-                enr=enr,
-                mac=mac,
-                product_model=product_model,
-                nickname=nickname,
-                timezone_name=timezone_name,
-                firmware_ver=firmware_ver,
-                dtls=dtls,
-                parent_dtls=parent_dtls,
-                parent_enr=parent_enr,
-                parent_mac=parent_mac,
-                thumbnail=thumbnail,
+    cameras = _build_camera_list(data.get("device_list", []), "legacy home_page/get_object_list")
+    home_id = data.get("home_id") or data.get("id")
+    if home_id:
+        try:
+            home_data = get_home_devices(auth_info, str(home_id))
+            cloud_cameras = _build_camera_list(
+                home_data.get("device_list", []), "cloud v4/home/get-home-devices"
             )
-        )
-    return result
+            _log_v4_validation(cameras, cloud_cameras)
+            cameras = _merge_camera_lists(cameras, cloud_cameras)
+        except Exception as ex:
+            logger.debug(f"[API] Could not refresh camera list from v4 home devices: [{type(ex).__name__}] {ex}")
+
+    return cameras
 
 def run_action(auth_info: WyzeCredential, camera: WyzeCamera, action: str):
     """Send run_action commands to the camera."""

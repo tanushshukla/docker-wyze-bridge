@@ -102,8 +102,10 @@ def create_app():
                 "online": cam.ip is not None,
                 "connected": True,  # go2rtc handles connections
                 "enabled": uri not in wb.disabled_cams,
-                "img_url": f"/thumb/{uri}.jpg",
+                "img_url": f"/snapshot/{uri}.jpg",
+                "snapshot_url": f"{request.host_url.rstrip('/')}/snapshot/{uri}.jpg",
                 "webrtc_url": f"/webrtc/{uri}",
+                "preview_url": f"{request.host_url.rstrip('/')}/webrtc/{uri}",
                 "rtsp_url": f"rtsp://{request.host.split(':')[0]}:8554/{uri}",
                 "mac": cam.mac,
                 "firmware_ver": cam.firmware_ver,
@@ -182,7 +184,8 @@ def create_app():
                 "webrtc_support": cam.webrtc_support,
                 "webrtc_url": f"/webrtc/{cam_name}",
                 "rtsp_url": f"rtsp://{request.host.split(':')[0]}:8554/{cam_name}",
-                "img_url": f"/thumb/{cam_name}.jpg",
+                "img_url": f"/snapshot/{cam_name}.jpg",
+                "snapshot_url": f"{request.host_url.rstrip('/')}/snapshot/{cam_name}.jpg",
                 "mac": cam.mac,
                 "online": cam.ip is not None,
             }
@@ -240,6 +243,15 @@ def create_app():
     def img(img_file: str):
         """Redirect to API thumbnail."""
         return thumbnail(img_file)
+
+    @app.route("/snapshot/<string:img_file>")
+    @auth_required
+    def snapshot(img_file: str):
+        """Serve the latest locally cached snapshot without cloud refresh."""
+        file_path = Path(config.IMG_PATH) / img_file
+        if file_path.exists() and file_path.stat().st_size > 0:
+            return send_from_directory(config.IMG_PATH, img_file)
+        return redirect("/static/notavailable.svg", code=307)
 
     @app.route("/thumb/<string:img_file>")
     @auth_required

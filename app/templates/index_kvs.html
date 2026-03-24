@@ -54,9 +54,16 @@
                 </div>
             </header>
             <div class="card-image has-text-centered">
-                <figure class="image">
+                <figure class="image preview-shell" data-cam="{{ cam_uri }}">
+                    <img id="preview-{{ cam_uri }}" class="camera-preview" src="{{ camera.img_url }}"
+                        alt="{{ camera.nickname }} preview" loading="lazy"
+                        onerror="this.onerror=null;this.src='/static/notavailable.svg';">
+                    <button type="button" class="button is-link is-light is-small preview-launch"
+                        data-cam="{{ cam_uri }}">
+                        Live Preview
+                    </button>
                     <video id="video-{{ cam_uri }}" data-cam="{{ cam_uri }}" class="webrtc-video" controls muted
-                        playsinline poster="{{ camera.img_url }}">
+                        playsinline preload="none" poster="{{ camera.img_url }}">
                     </video>
                 </figure>
                 <div class="stream-urls px-3 py-2 has-background-black-bis has-text-grey-light is-size-7">
@@ -67,6 +74,26 @@
                         <div class="control is-expanded">
                             <input class="input is-small is-borderless has-background-black-ter has-text-grey-light"
                                 type="text" value="{{ camera.rtsp_url }}" readonly onclick="this.select();">
+                        </div>
+                    </div>
+                    <div class="field has-addons mb-1">
+                        <div class="control">
+                            <a href="{{ camera.preview_url }}" class="button is-small is-info is-outlined"
+                                target="_blank">Preview</a>
+                        </div>
+                        <div class="control is-expanded">
+                            <input class="input is-small is-borderless has-background-black-ter has-text-grey-light"
+                                type="text" value="{{ camera.preview_url }}" readonly onclick="this.select();">
+                        </div>
+                    </div>
+                    <div class="field has-addons mb-1">
+                        <div class="control">
+                            <a href="{{ camera.snapshot_url }}" class="button is-small is-warning is-outlined"
+                                target="_blank">Snapshot</a>
+                        </div>
+                        <div class="control is-expanded">
+                            <input class="input is-small is-borderless has-background-black-ter has-text-grey-light"
+                                type="text" value="{{ camera.snapshot_url }}" readonly onclick="this.select();">
                         </div>
                     </div>
                 </div>
@@ -82,10 +109,30 @@
         width: 100%;
         background: #000;
         cursor: pointer;
+        display: none;
     }
 
     .camera {
         margin-bottom: 1rem;
+    }
+
+    .preview-shell {
+        position: relative;
+        background: #000;
+    }
+
+    .camera-preview {
+        display: block;
+        width: 100%;
+        background: #000;
+        cursor: pointer;
+    }
+
+    .preview-launch {
+        position: absolute;
+        right: 0.75rem;
+        top: 0.75rem;
+        z-index: 1;
     }
 
     .camera.disabled {
@@ -105,6 +152,7 @@
 <script>
     // Track pending changes
     const pendingChanges = new Map();
+    const startedStreams = new Set();
 
     function updateDisabledVisibility() {
         const show = document.getElementById('show-disabled').checked;
@@ -176,6 +224,55 @@
         }
     }
 
+    async function startPreview(cam) {
+        if (startedStreams.has(cam)) {
+            const video = document.getElementById(`video-${cam}`);
+            if (video) {
+                video.play().catch((err) => console.warn(`play() error for ${cam}:`, err));
+            }
+            return;
+        }
+
+        const preview = document.getElementById(`preview-${cam}`);
+        const video = document.getElementById(`video-${cam}`);
+        const button = document.querySelector(`.preview-launch[data-cam='${cam}']`);
+
+        if (!video) {
+            return;
+        }
+
+        if (button) {
+            button.disabled = true;
+            button.classList.add('is-loading');
+        }
+
+        try {
+            const response = await fetch(`/signaling/${cam}?kvs`);
+            const signalData = await response.json();
+
+            if (signalData.result !== 'ok') {
+                throw new Error(signalData.result || 'Signaling failed');
+            }
+
+            startedStreams.add(cam);
+            if (preview) {
+                preview.style.display = 'none';
+            }
+            if (button) {
+                button.style.display = 'none';
+            }
+            video.style.display = 'block';
+            new Receiver(signalData);
+            await video.play().catch(() => {});
+        } catch (err) {
+            console.error(`Failed to start preview for ${cam}:`, err);
+            if (button) {
+                button.disabled = false;
+                button.classList.remove('is-loading');
+            }
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         // Restore show-disabled state
         const show = localStorage.getItem('show_disabled') === 'true';
@@ -189,31 +286,19 @@
         document.querySelectorAll('.enable-toggle').forEach(toggle => {
             toggle.addEventListener('change', checkForChanges);
         });
+
+        document.querySelectorAll('.preview-launch').forEach(button => {
+            button.addEventListener('click', (event) => {
+                event.stopPropagation();
+                startPreview(button.dataset.cam);
+            });
+        });
+
+        document.querySelectorAll('.camera-preview').forEach(preview => {
+            preview.addEventListener('click', () => startPreview(preview.id.replace('preview-', '')));
+        });
     });
 </script>
 
 <script src="static/webrtc.js"></script>
-<script>
-    // Auto-load WebRTC for all cameras on page load
-    document.addEventListener('DOMContentLoaded', () => {
-        document.querySelectorAll('.webrtc-video').forEach(async (video) => {
-            const cam = video.dataset.cam;
-            console.log(`Auto-loading WebRTC for ${cam}...`);
-
-            try {
-                const response = await fetch(`/signaling/${cam}?kvs`);
-                const signalData = await response.json();
-
-                if (signalData.result === 'ok') {
-                    console.log(`WebRTC signaling successful for ${cam}`);
-                    new Receiver(signalData);
-                } else {
-                    console.error(`Signaling failed for ${cam}:`, signalData);
-                }
-            } catch (err) {
-                console.error(`Failed to load WebRTC for ${cam}:`, err);
-            }
-        });
-    });
-</script>
 {% endblock %}

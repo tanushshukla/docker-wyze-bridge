@@ -28,6 +28,7 @@ MODEL_NAMES = {
     "AN_RSCW": "Battery Cam Pro",
     "LD_CFP": "Floodlight Pro",
     "GW_DBD": "Doorbell Duo",
+    "GW_DUO": "Duo Cam Pan",
 }
 
 # These cameras don't seem to support WebRTC
