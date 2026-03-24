@@ -246,7 +246,7 @@ class Receiver {
         }
     }
     refreshSignal() {
-        fetch(new URL(`signaling/${this.signalJson.cam}?${this.whep ? 'webrtc' : 'kvs'}`, window.location.href))
+        fetch(new URL(`/signaling/${this.signalJson.cam}?${this.whep ? 'webrtc' : 'kvs'}`, window.location.origin))
             .then((resp) => resp.json())
             .then((signalJson) => {
                 if (signalJson.result !== "ok") { return console.error("signaling json not ok"); }
