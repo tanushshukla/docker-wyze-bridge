@@ -1,120 +1,85 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-# Configuration
-IMAGE_NAME="aleximurdoch/wyze-bridge"
-TAG="${1:-latest}"
-BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-GITHUB_SHA=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ENV_FILE="${ROOT_DIR}/app/.env"
+IMAGE_NAME="${IMAGE_NAME:-aleximurdoch/wyze-bridge}"
+PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
+BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+GITHUB_SHA="$(git -C "${ROOT_DIR}" rev-parse HEAD 2>/dev/null || echo "unknown")"
+PUSH="${PUSH:-true}"
+NO_CACHE="${NO_CACHE:-false}"
 
-# Get version from git tag or use default
-if [ "$TAG" = "latest" ]; then
-    VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
-else
-    VERSION="$TAG"
-fi
-
-echo "════════════════════════════════════════════════════════"
-echo "🚀 Docker Wyze Bridge Release"
-echo "════════════════════════════════════════════════════════"
-echo "Image:      $IMAGE_NAME"
-echo "Tag:        $TAG"
-echo "Version:    $VERSION"
-echo "Build Date: $BUILD_DATE"
-echo "Commit:     $GITHUB_SHA"
-echo "Platforms:  linux/amd64, linux/arm64"
-echo "════════════════════════════════════════════════════════"
-echo ""
-
-# Check if we're in the right directory
-if [ ! -f "docker/Dockerfile" ]; then
+if [ ! -f "${ROOT_DIR}/docker/Dockerfile" ]; then
     echo "❌ Error: docker/Dockerfile not found. Run from project root."
     exit 1
 fi
 
-# Detect build mode
-USE_BUILDX=false
-PLATFORMS="linux/amd64,linux/arm64"
-
-if command -v docker &>/dev/null && docker buildx version &>/dev/null; then
-    USE_BUILDX=true
-    echo "✅ Using docker buildx for multi-platform builds"
-
-    # Create/use buildx builder
-    if ! docker buildx inspect multiarch &>/dev/null; then
-        echo "📦 Creating buildx builder 'multiarch'..."
-        docker buildx create --name multiarch --use
-    else
-        docker buildx use multiarch
-    fi
-else
-    echo "⚠️  docker buildx not available - using single-platform build"
-    echo "   To enable multi-platform builds:"
-    echo "   1. Install Docker Desktop (includes buildx)"
-    echo "   2. Or install buildx: https://docs.docker.com/buildx/working-with-buildx/"
-    echo ""
-    PLATFORMS="linux/$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
-    echo "   Building for: $PLATFORMS"
-    echo ""
+if [ ! -f "${ENV_FILE}" ]; then
+    echo "❌ Error: app/.env not found."
+    exit 1
 fi
 
-# Build and Push
-echo "🔨 Building Docker image..."
-
-if [ "$USE_BUILDX" = true ]; then
-    # Multi-platform build with buildx
-    docker buildx build \
-      --platform "$PLATFORMS" \
-      --build-arg BUILD_DATE="$BUILD_DATE" \
-      --build-arg BUILD_VERSION="$VERSION" \
-      --build-arg GITHUB_SHA="$GITHUB_SHA" \
-      --no-cache \
-      --push \
-      -t "$IMAGE_NAME:$TAG" \
-      -f docker/Dockerfile \
-      .
-else
-    # Single-platform build with legacy builder
-    docker build \
-      --platform "$PLATFORMS" \
-      --build-arg BUILD_DATE="$BUILD_DATE" \
-      --build-arg BUILD_VERSION="$VERSION" \
-      --build-arg GITHUB_SHA="$GITHUB_SHA" \
-      --no-cache \
-      -t "$IMAGE_NAME:$TAG" \
-      -f docker/Dockerfile \
-      .
-
-    # Push separately
-    echo "📤 Pushing image..."
-    docker push "$IMAGE_NAME:$TAG"
+VERSION="$(grep '^VERSION=' "${ENV_FILE}" | cut -d'=' -f2-)"
+if [ -z "${VERSION}" ]; then
+    echo "❌ Error: VERSION is not set in app/.env."
+    exit 1
 fi
 
-echo ""
-echo "════════════════════════════════════════════════════════"
-echo "✅ Build and Push Complete!"
-echo "════════════════════════════════════════════════════════"
-echo "Image pushed to: $IMAGE_NAME:$TAG"
-echo ""
-echo "To pull: docker pull $IMAGE_NAME:$TAG"
-echo "════════════════════════════════════════════════════════"
-
-# Clean up old untagged images
-echo ""
-echo "🧹 Cleaning up old untagged images..."
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -f "$SCRIPT_DIR/imgclean.sh" ]; then
-    if command -v gh &>/dev/null; then
-        bash "$SCRIPT_DIR/imgclean.sh"
-    else
-        echo "⚠️  GitHub CLI (gh) not installed - skipping image cleanup"
-        echo "   Install with: brew install gh"
-    fi
-else
-    echo "⚠️  imgclean.sh not found - skipping image cleanup"
+if [[ ! "${VERSION}" =~ ^wyze-[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9]+)?$ ]]; then
+    echo "❌ Error: VERSION must look like wyze-x.y.z. Found '${VERSION}'."
+    exit 1
 fi
 
+declare -a TAGS
+if [ "$#" -gt 0 ]; then
+    TAGS=("$@")
+else
+    TAGS=("${VERSION}" "latest")
+fi
+
+declare -a TAG_ARGS
+for tag in "${TAGS[@]}"; do
+    TAG_ARGS+=(-t "${IMAGE_NAME}:${tag}")
+done
+
+declare -a BUILD_CMD=(
+    docker buildx build
+    --platform "${PLATFORMS}"
+    --build-arg "BUILD_DATE=${BUILD_DATE}"
+    --build-arg "BUILD_VERSION=${VERSION}"
+    --build-arg "GITHUB_SHA=${GITHUB_SHA}"
+)
+
+if [ "${NO_CACHE}" = "true" ]; then
+    BUILD_CMD+=(--no-cache)
+fi
+
+if [ "${PUSH}" = "true" ]; then
+    BUILD_CMD+=(--push)
+fi
+
+BUILD_CMD+=("${TAG_ARGS[@]}" -f "${ROOT_DIR}/docker/Dockerfile" "${ROOT_DIR}")
+
+echo "════════════════════════════════════════════════════════"
+echo "🚀 Docker Wyze Bridge Release"
+echo "════════════════════════════════════════════════════════"
+echo "Image:      ${IMAGE_NAME}"
+echo "Version:    ${VERSION}"
+echo "Tags:       ${TAGS[*]}"
+echo "Platforms:  ${PLATFORMS}"
+echo "Build Date: ${BUILD_DATE}"
+echo "Commit:     ${GITHUB_SHA}"
+echo "Push:       ${PUSH}"
+echo "════════════════════════════════════════════════════════"
+echo ""
+echo "🔨 Running release build..."
+"${BUILD_CMD[@]}"
+
 echo ""
 echo "════════════════════════════════════════════════════════"
-echo "🎉 Release Complete!"
+echo "✅ Release Build Complete"
 echo "════════════════════════════════════════════════════════"
+for tag in "${TAGS[@]}"; do
+    echo "docker pull ${IMAGE_NAME}:${tag}"
+done

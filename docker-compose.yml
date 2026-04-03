@@ -1,7 +1,7 @@
 services:
     wyze-bridge:
         container_name: wyze-bridge
-        image: aleximurdoch/wyze-bridge:wyze-1.0.1
+        image: aleximurdoch/wyze-bridge:wyze-1.0.2
         restart: unless-stopped
         ports:
             - 1984:1984 # go2rtc UI/API

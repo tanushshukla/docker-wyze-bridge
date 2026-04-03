@@ -1,29 +1,20 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-# Build and push script for AMD64 architecture only
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VERSION="$(grep '^VERSION=' "${ROOT_DIR}/app/.env" | cut -d'=' -f2-)"
 
-IMAGE_NAME="${IMAGE_NAME:-aleximurdoch/wyze-bridge}"
-TAG="${TAG:-latest}"
-BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-GITHUB_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "local")
-
-echo "Building and pushing Docker image for AMD64..."
-echo "Image: ${IMAGE_NAME}:${TAG}"
-echo "Platform: linux/amd64"
-echo "Build Date: ${BUILD_DATE}"
-echo "Commit: ${GITHUB_SHA}"
+echo "⚠️  AMD64-only helper. Use scripts/release.sh for normal releases."
 echo ""
 
-docker buildx build \
-    --platform linux/amd64 \
-    --file docker/Dockerfile \
-    --tag "${IMAGE_NAME}:${TAG}" \
-    --build-arg BUILD_DATE="${BUILD_DATE}" \
-    --build-arg GITHUB_SHA="${GITHUB_SHA}" \
-    --build-arg BUILD_VERSION="${TAG}" \
-    --push \
-    .
+declare -a TAG_ARGS
+if [ "$#" -gt 0 ]; then
+    TAG_ARGS=("$@")
+else
+    TAG_ARGS=("${VERSION}")
+fi
 
-echo ""
-echo "Build and push complete: ${IMAGE_NAME}:${TAG}"
+IMAGE_NAME="${IMAGE_NAME:-aleximurdoch/wyze-bridge}" \
+PLATFORMS="linux/amd64" \
+PUSH="${PUSH:-true}" \
+bash "${ROOT_DIR}/scripts/release.sh" "${TAG_ARGS[@]}"
