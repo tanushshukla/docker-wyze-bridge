@@ -51,7 +51,7 @@ Instead, it utilizes the Wyze Kinesis Video Stream (KVS) cloud feed:
 services:
   wyze-bridge:
     container_name: wyze-bridge
-    image: aleximurdoch/wyze-bridge:wyze-1.0.1
+    image: aleximurdoch/wyze-bridge:wyze-1.0.2
     restart: unless-stopped
     ports:
       - 1984:1984 # go2rtc API/Stream
@@ -80,7 +80,7 @@ services:
 
 You can also pull the public image directly:
 ```bash
-docker pull aleximurdoch/wyze-bridge:wyze-1.0.1
+docker pull aleximurdoch/wyze-bridge:wyze-1.0.2
 ```
 
 ### Home Assistant
