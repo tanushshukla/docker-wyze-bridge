@@ -100,6 +100,7 @@ def create_app():
         # Format camera data for WebUI
         # Reload disabled cams to ensure UI is in sync with file storage
         wb.disabled_cams = wb.load_disabled_cams()
+        ui_settings = wb.load_ui_settings()
         cam_data = {
             uri: {
                 "name_uri": uri,
@@ -134,6 +135,7 @@ def create_app():
                 total_cams=len(wb.cameras),
                 api=WbAuth.api,
                 version=VERSION,
+                live_preview=ui_settings["live_preview"],
             )
         )
 
@@ -148,6 +150,19 @@ def create_app():
             resp.set_cookie("camera_order", quote_plus(order))
 
         return resp
+
+    @app.route("/api/ui/live-preview", methods=["GET", "POST"])
+    @auth_required
+    def api_live_preview_setting():
+        if request.method == "GET":
+            return wb.load_ui_settings()
+
+        payload = request.get_json(silent=True) or {}
+        if "enabled" not in payload:
+            return {"status": "error", "error": "Missing enabled value"}, 400
+
+        saved = wb.save_ui_settings({"live_preview": payload["enabled"]})
+        return {"status": "ok", **saved}
 
     @app.route("/health")
     def health():

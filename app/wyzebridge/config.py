@@ -48,6 +48,7 @@ MOTION_INT: int = max(env_bool("MOTION_INT", "1.5", style="float"), 1.1)
 MOTION_START: bool = env_bool("MOTION_START", style="bool")
 
 WB_AUTH: bool = bool(env_bool("WB_AUTH") if getenv("WB_AUTH") else True)
+WB_LIVE_PREVIEW: bool = bool(env_bool("WB_LIVE_PREVIEW", style="bool"))
 
 URI_MAC: bool = bool(env_bool("URI_SEPARATOR", style="bool"))
 URI_SEPARATOR: str = env_bool("URI_SEPARATOR", "-", style="original")

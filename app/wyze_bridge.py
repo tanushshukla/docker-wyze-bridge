@@ -1,4 +1,5 @@
 """Main Wyze Bridge application - using go2rtc for WebRTC-to-RTSP."""
+import json
 from os import makedirs
 import signal  # Force rebuild
 import sys
@@ -6,11 +7,12 @@ import time
 from threading import Thread
 
 from wyzebridge.build_config import BUILD_STR, VERSION
-from wyzebridge.config import HASS_TOKEN, IMG_PATH, TOKEN_PATH
+from wyzebridge.config import HASS_TOKEN, IMG_PATH, TOKEN_PATH, WB_LIVE_PREVIEW
 from wyzebridge.auth import WbAuth
 from wyzebridge.bridge_utils import env_bool, migrate_path
 from wyzebridge.hass import setup_hass
 from wyzebridge.logging import logger
+from wyzebridge.ui_settings import load_ui_settings, save_ui_settings
 from wyzebridge.wyze_api import WyzeApi
 from wyzebridge.snapshot_manager import SnapshotManager
 from wyzebridge.go2rtc_server import Go2RtcServer
@@ -28,8 +30,8 @@ if HASS_TOKEN:
 
 class WyzeBridge(Thread):
     """Main bridge class - handles Wyze auth and go2rtc stream management."""
-    
-    __slots__ = "api", "cameras", "go2rtc", "snapshots"
+
+    __slots__ = "api", "cameras", "go2rtc", "snapshots", "disabled_cams"
 
     def __init__(self) -> None:
         Thread.__init__(self)
@@ -46,18 +48,29 @@ class WyzeBridge(Thread):
 
     def load_disabled_cams(self) -> set[str]:
         """Load list of disabled cameras from file."""
-        import json
         try:
-             with open("/config/disabled_cameras.json", "r") as f:
-                 return set(json.load(f))
+            with open("/config/disabled_cameras.json", "r") as f:
+                return set(json.load(f))
         except (FileNotFoundError, json.JSONDecodeError):
             return set()
 
     def save_disabled_cams(self) -> None:
         """Save disabled cameras to file."""
-        import json
         with open("/config/disabled_cameras.json", "w") as f:
             json.dump(list(self.disabled_cams), f)
+
+    def load_ui_settings(self) -> dict[str, bool]:
+        """Load persisted UI settings, falling back to env defaults."""
+        return load_ui_settings(
+            default_live_preview=WB_LIVE_PREVIEW,
+        )
+
+    def save_ui_settings(self, settings: dict[str, bool]) -> dict[str, bool]:
+        """Persist UI settings to /config."""
+        return save_ui_settings(
+            settings,
+            default_live_preview=WB_LIVE_PREVIEW,
+        )
 
     def toggle_cam(self, uri: str, enable: bool) -> None:
         """Enable or disable a camera."""

@@ -109,6 +109,7 @@ This repository is compatible with the Home Assistant Add-on Store.
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `WB_AUTH` | `False` | Enable login for the Web UI. |
+| `WB_LIVE_PREVIEW` | `False` | Default the Web UI to menu-level live preview mode until the UI setting is changed and saved. |
 | `WB_RTSP_PORT` | `8554` | External RTSP port advertised by the UI/API when Docker port mapping differs from the container's internal `8554`. |
 | `SNAPSHOT` | `Disable` | Interval in seconds to take snapshots (e.g., `180`). |
 | `SNAPSHOT_RETENTION` | `7d` | How long to keep snapshots (e.g., `7d`, `24h`). |

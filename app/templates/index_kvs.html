@@ -13,6 +13,13 @@
     <div class="navbar-end">
         <div class="navbar-item">
             <label class="checkbox has-text-white">
+                <input type="checkbox" id="live-preview-toggle" {% if live_preview %}checked{% endif %}
+                    onchange="updateLivePreviewSetting(this)">
+                Live Preview
+            </label>
+        </div>
+        <div class="navbar-item">
+            <label class="checkbox has-text-white">
                 <input type="checkbox" id="show-disabled" onchange="updateDisabledVisibility()">
                 Show Disabled
             </label>
@@ -57,12 +64,10 @@
                 <figure class="image preview-shell" data-cam="{{ cam_uri }}">
                     <img id="preview-{{ cam_uri }}" class="camera-preview" src="{{ camera.img_url }}"
                         alt="{{ camera.nickname }} preview" loading="lazy"
+                        {% if live_preview %}style="display:none;"{% endif %}
                         onerror="this.onerror=null;this.src='/static/notavailable.svg';">
-                    <button type="button" class="button is-link is-light is-small preview-launch"
-                        data-cam="{{ cam_uri }}">
-                        Live Preview
-                    </button>
                     <video id="video-{{ cam_uri }}" data-cam="{{ cam_uri }}" class="webrtc-video" controls muted
+                        {% if live_preview %}style="display:block;"{% endif %}
                         playsinline preload="none" poster="{{ camera.img_url }}">
                     </video>
                 </figure>
@@ -125,14 +130,6 @@
         display: block;
         width: 100%;
         background: #000;
-        cursor: pointer;
-    }
-
-    .preview-launch {
-        position: absolute;
-        right: 0.75rem;
-        top: 0.75rem;
-        z-index: 1;
     }
 
     .camera.disabled {
@@ -153,6 +150,7 @@
     // Track pending changes
     const pendingChanges = new Map();
     const startedStreams = new Set();
+    const livePreviewEnabled = {{ 'true' if live_preview else 'false' }};
 
     function updateDisabledVisibility() {
         const show = document.getElementById('show-disabled').checked;
@@ -188,6 +186,28 @@
             saveBtn.querySelector('span:last-child').textContent = `Save ${pendingChanges.size} Change(s)`;
         } else {
             saveBtn.style.display = 'none';
+        }
+    }
+
+    async function updateLivePreviewSetting(toggle) {
+        const enabled = toggle.checked;
+        toggle.disabled = true;
+        try {
+            const response = await fetch('/api/ui/live-preview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled }),
+            });
+            const data = await response.json();
+            if (!response.ok || data.status !== 'ok') {
+                throw new Error(data.error || 'Failed to save live preview setting');
+            }
+            window.location.reload();
+        } catch (err) {
+            console.error('Failed to save live preview setting:', err);
+            toggle.checked = !enabled;
+            toggle.disabled = false;
+            alert('Could not save the live preview setting. Check console for details.');
         }
     }
 
@@ -235,15 +255,9 @@
 
         const preview = document.getElementById(`preview-${cam}`);
         const video = document.getElementById(`video-${cam}`);
-        const button = document.querySelector(`.preview-launch[data-cam='${cam}']`);
 
         if (!video) {
             return;
-        }
-
-        if (button) {
-            button.disabled = true;
-            button.classList.add('is-loading');
         }
 
         try {
@@ -258,18 +272,15 @@
             if (preview) {
                 preview.style.display = 'none';
             }
-            if (button) {
-                button.style.display = 'none';
-            }
             video.style.display = 'block';
             new Receiver(signalData);
             await video.play().catch(() => {});
         } catch (err) {
             console.error(`Failed to start preview for ${cam}:`, err);
-            if (button) {
-                button.disabled = false;
-                button.classList.remove('is-loading');
+            if (preview) {
+                preview.style.display = 'block';
             }
+            video.style.display = 'none';
         }
     }
 
@@ -287,16 +298,11 @@
             toggle.addEventListener('change', checkForChanges);
         });
 
-        document.querySelectorAll('.preview-launch').forEach(button => {
-            button.addEventListener('click', (event) => {
-                event.stopPropagation();
-                startPreview(button.dataset.cam);
+        if (livePreviewEnabled) {
+            document.querySelectorAll('.camera:not(.disabled)').forEach(card => {
+                startPreview(card.dataset.cam);
             });
-        });
-
-        document.querySelectorAll('.camera-preview').forEach(preview => {
-            preview.addEventListener('click', () => startPreview(preview.id.replace('preview-', '')));
-        });
+        }
     });
 </script>
 
