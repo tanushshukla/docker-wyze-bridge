@@ -226,7 +226,7 @@ class WyzeApi:
                 return next((c for c in self.cameras if c.name_uri == uri))
 
         too_old = time() - self._last_pull > 120
-        with contextlib.suppress(TypeError, AccessTokenError):
+        with contextlib.suppress(TypeError):
             for cam in self.get_cameras(fresh_data=too_old):
                 if cam.name_uri == uri:
                     return cam
@@ -347,6 +347,9 @@ class WyzeApi:
             logger.info("☁️ Fetching signaling data from the Wyze API...")
             wss = get_cam_webrtc(self.auth, cam.mac)
             return wss | {"result": "ok", "cam": cam_name, "provider": "kvs"}
+        except AccessTokenError:
+            # Let the authenticated wrapper refresh expired tokens and retry once.
+            raise
         except (HTTPError, WyzeAPIError) as ex:
             logger.warning(f"[API] Error fetching signaling data [{type(ex).__name__}] {ex}")
             if isinstance(ex, HTTPError) and ex.response.status_code == 404:
